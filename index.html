@@ -927,6 +927,7 @@ let curLat       = null;
 let curLng       = null;
 let curStatus    = null;
 let curService   = null;
+const _debugLines = [];
 
 /* ─────────────────────────────────────────────
    MODE ROUTER
@@ -1168,7 +1169,7 @@ function forceSyncNow() {
   }
 }
 
-const _debugLines = [];
+
 function debugLog(msg) {
   const ts = new Date().toLocaleTimeString();
   _debugLines.push(ts + ' ' + msg);

@@ -1346,7 +1346,7 @@ function toggleDebug() {
   label.textContent = (open ? '▾' : '▸') + ' ACTIVITY LOG';
 }
 
-
+function debugLog(msg) {
   const ts = new Date().toLocaleTimeString();
   _debugLines.push(ts + ' ' + msg);
   if (_debugLines.length > 20) _debugLines.shift();

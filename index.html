@@ -370,6 +370,58 @@
       padding: 8px 16px 4px;
     }
 
+    /* --- Connection Status --- */
+    .conn-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 16px;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--text3);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .conn-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .conn-dot.ok { background: var(--green); }
+    .conn-dot.off { background: var(--red); animation: blink 1.5s ease-in-out infinite; }
+
+    .force-sync-btn {
+      background: transparent;
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--accent);
+      padding: 8px;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: all 0.15s;
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    .force-sync-btn:active { background: var(--bg3); transform: scale(0.98); }
+
+    .debug-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin: 0 16px 10px;
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: var(--text3);
+      line-height: 1.6;
+      max-height: 80px;
+      overflow-y: auto;
+    }
+
     /* ======================================================
        SUPERVISOR APP
     ====================================================== */
@@ -697,11 +749,19 @@
       <div class="svc-chip" data-svc="Special Tasks"         onclick="setService('Special Tasks')">Special Tasks</div>
     </div>
 
+    <div class="conn-bar" id="conn-bar">
+      <div class="conn-dot off" id="conn-dot"></div>
+      <span id="conn-text">Connecting to server…</span>
+    </div>
+
     <div class="sync-line" id="sync-line">⏳ Syncing…</div>
 
     <div class="checkout-area">
+      <button class="force-sync-btn" onclick="forceSyncNow()">🔄 FORCE SYNC NOW</button>
       <button class="checkout-btn" onclick="techCheckout()">⏹ END SHIFT / CHECK OUT</button>
     </div>
+
+    <div class="debug-box" id="debug-box">— Waiting for activity —</div>
   </div>
 
 </div><!-- end tech-app -->
@@ -858,6 +918,16 @@ function effectiveStatus(tech) {
   return tech.status || 'Offline';
 }
 
+/* ═══════════════════════════════════════════════
+   TECH APP
+═══════════════════════════════════════════════ */
+let gpsTimer     = null;
+let techId       = null;
+let curLat       = null;
+let curLng       = null;
+let curStatus    = null;
+let curService   = null;
+
 /* ─────────────────────────────────────────────
    MODE ROUTER
 ───────────────────────────────────────────── */
@@ -871,16 +941,6 @@ if (mode === 'tech') {
 } else {
   document.getElementById('mode-selector').style.display = 'flex';
 }
-
-/* ═══════════════════════════════════════════════
-   TECH APP
-═══════════════════════════════════════════════ */
-let gpsTimer     = null;
-let techId       = null;
-let curLat       = null;
-let curLng       = null;
-let curStatus    = null;
-let curService   = null;
 
 function initTechApp() {
   const savedName = localStorage.getItem('ft_name');
@@ -917,23 +977,41 @@ function showMainScreen(name, zone) {
   if (ss) setStatus(ss, false);
   if (sv) setService(sv, false);
 
+  // Push immediately to Firebase — don't wait for GPS
+  pushFb(name, zone);
+  debugLog('Login push sent (no GPS yet)');
+
+  // Then start GPS tracking
   startGps(name, zone);
+
+  // Monitor Firebase connection state
+  monitorConnection();
 }
 
 function startGps(name, zone) {
   if (!navigator.geolocation) {
     setGpsErr('GPS not supported on this device');
+    debugLog('ERROR: navigator.geolocation not available');
     return;
   }
-  const opts = { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 };
+  debugLog('Requesting GPS permission…');
+  const opts = { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 };
   const onPos = pos => {
     curLat = pos.coords.latitude;
     curLng = pos.coords.longitude;
     setGpsOk();
+    debugLog('GPS fix: ' + curLat.toFixed(4) + ', ' + curLng.toFixed(4));
     pushFb(name, zone);
   };
-  const onErr = () => {
-    setGpsErr('GPS access denied — enable location in browser settings');
+  const onErr = (err) => {
+    const reasons = {
+      1: 'Permission denied — open browser settings → allow Location',
+      2: 'Position unavailable — try going outdoors',
+      3: 'GPS timed out — will retry'
+    };
+    const msg = reasons[err.code] || ('GPS error code ' + err.code);
+    setGpsErr(msg);
+    debugLog('GPS error: ' + msg);
     pushFb(name, zone); // still push heartbeat without coords
   };
   navigator.geolocation.getCurrentPosition(onPos, onErr, opts);
@@ -944,8 +1022,17 @@ function startGps(name, zone) {
 }
 
 function pushFb(name, zone) {
-  if (!techId) return;
-  db.ref('techs/' + techId).update({
+  if (!techId) {
+    debugLog('pushFb skipped — no techId');
+    return;
+  }
+  // Check Firebase SDK loaded
+  if (typeof firebase === 'undefined' || !db) {
+    debugLog('ERROR: Firebase SDK not loaded!');
+    document.getElementById('sync-line').textContent = '⚠ Firebase not loaded — check internet and refresh';
+    return;
+  }
+  const payload = {
     name:     name,
     zone:     zone,
     status:   curStatus  || 'En Route',
@@ -954,11 +1041,15 @@ function pushFb(name, zone) {
     lng:      curLng,
     lastSeen: firebase.database.ServerValue.TIMESTAMP,
     active:   true
-  }).then(() => {
+  };
+  debugLog('Pushing to techs/' + techId + '…');
+  db.ref('techs/' + techId).update(payload).then(() => {
     document.getElementById('sync-line').textContent =
       '✓ Synced at ' + new Date().toLocaleTimeString();
-  }).catch(() => {
-    document.getElementById('sync-line').textContent = '⚠ Sync failed — check internet';
+    debugLog('✓ Sync OK');
+  }).catch((err) => {
+    document.getElementById('sync-line').textContent = '⚠ Sync failed — ' + (err.message || 'check internet');
+    debugLog('SYNC FAIL: ' + (err.message || err.code || 'unknown'));
   });
 }
 
@@ -1025,6 +1116,68 @@ function techLogout() {
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('ti-name').value = '';
   document.getElementById('ti-zone').value = '';
+}
+
+/* ─────────────────────────────────────────────
+   CONNECTION MONITOR + DEBUG
+───────────────────────────────────────────── */
+function monitorConnection() {
+  const connRef = db.ref('.info/connected');
+  connRef.on('value', (snap) => {
+    const connected = snap.val() === true;
+    const dot  = document.getElementById('conn-dot');
+    const text = document.getElementById('conn-text');
+    if (connected) {
+      dot.className = 'conn-dot ok';
+      text.textContent = 'Server connected';
+      debugLog('Firebase CONNECTED');
+    } else {
+      dot.className = 'conn-dot off';
+      text.textContent = 'Server disconnected — check internet';
+      debugLog('Firebase DISCONNECTED');
+    }
+  });
+}
+
+function forceSyncNow() {
+  const name = localStorage.getItem('ft_name');
+  const zone = localStorage.getItem('ft_zone');
+  if (!name || !zone || !techId) {
+    debugLog('Cannot force sync — not logged in');
+    return;
+  }
+  debugLog('Force sync triggered…');
+  document.getElementById('sync-line').textContent = '⏳ Syncing…';
+  pushFb(name, zone);
+
+  // Also re-request GPS
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        curLat = pos.coords.latitude;
+        curLng = pos.coords.longitude;
+        setGpsOk();
+        debugLog('GPS refreshed: ' + curLat.toFixed(4) + ', ' + curLng.toFixed(4));
+        pushFb(name, zone);
+      },
+      err => {
+        debugLog('GPS retry failed: code ' + err.code);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+}
+
+const _debugLines = [];
+function debugLog(msg) {
+  const ts = new Date().toLocaleTimeString();
+  _debugLines.push(ts + ' ' + msg);
+  if (_debugLines.length > 20) _debugLines.shift();
+  const el = document.getElementById('debug-box');
+  if (el) {
+    el.textContent = _debugLines.join('\n');
+    el.scrollTop = el.scrollHeight;
+  }
 }
 
 /* ═══════════════════════════════════════════════

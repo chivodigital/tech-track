@@ -648,20 +648,116 @@
     .bg-amber { background: var(--amber); }
     .bg-red   { background: var(--red); }
 
-    /* Responsive */
-    @media (max-width: 700px) {
-      .dashboard-body { flex-direction: column; }
-      #sidebar { 
-        width: 100%; 
-        min-width: 100%; 
-        flex: 0 0 45vh; 
-        border-right: none; 
-        border-bottom: 2px solid var(--border2); 
+    /* ======================================================
+       MOBILE — SUPERVISOR MODE
+    ====================================================== */
+
+    /* Mobile tab bar — hidden on desktop */
+    .mob-tab-bar { display: none; }
+
+    @media (max-width: 768px) {
+
+      /* ── Super Header ── */
+      .super-header {
+        padding: 8px 12px;
+        flex-wrap: wrap;
+        gap: 4px;
       }
-      #map { flex: 1; min-height: 0; }
+      .super-header .app-mark { font-size: 1rem !important; }
+      .super-header-right { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
       .legend { display: none; }
-      .super-header { padding: 10px 14px; }
-      .super-header-right { gap: 8px; }
+      .count-badge { font-size: 0.7rem; padding: 3px 10px; }
+      .timestamp-label { font-size: 0.58rem; width: 100%; text-align: right; }
+
+      /* ── Dashboard body: stacked, full-height ── */
+      #dashboard { height: 100vh; }
+
+      .dashboard-body {
+        flex-direction: column;
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* ── Sidebar: full-width on mobile ── */
+      #sidebar {
+        width: 100%;
+        min-width: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Filter bar: horizontal compact row */
+      .filter-bar {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 6px;
+        padding: 8px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .filter-bar select {
+        flex: 1 1 90px;
+        min-width: 90px;
+        font-size: 0.72rem;
+        padding: 7px 24px 7px 8px;
+      }
+
+      /* Tech rows: slightly more breathing room for finger taps */
+      .tech-row { padding: 13px 14px; }
+      .row-name { font-size: 0.85rem; }
+      .row-meta, .row-status, .row-time { font-size: 0.72rem; }
+
+      /* ── Map: full-width on mobile ── */
+      #map {
+        flex: 1;
+        min-height: 0;
+      }
+
+      /* ── Mob-hidden utility: toggling panes ── */
+      .mob-hidden { display: none !important; }
+
+      /* ── Mobile tab bar ── */
+      .mob-tab-bar {
+        display: flex;
+        flex-shrink: 0;
+        background: var(--bg2);
+        border-top: 1px solid var(--border);
+        z-index: 20;
+      }
+      .mob-tab {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--text3);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        padding: 12px 0 10px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        transition: color 0.15s, background 0.15s;
+      }
+      .mob-tab .tab-icon { font-size: 1.1rem; }
+      .mob-tab.mob-tab-active {
+        color: var(--accent);
+        background: var(--bg3);
+        border-top: 2px solid var(--accent);
+      }
+      .mob-tab:active { background: var(--bg); }
+    }
+
+    /* Desktop fallback: keep sidebar at 240px on smaller desktops */
+    @media (min-width: 769px) and (max-width: 1000px) {
+      #sidebar { width: 240px; min-width: 240px; }
+      .legend { display: none; }
     }
   </style>
 </head>
@@ -851,6 +947,16 @@
 
       <!-- Map -->
       <div id="map"></div>
+    </div>
+
+    <!-- Mobile Tab Bar (supervisor mode only, visible on mobile) -->
+    <div class="mob-tab-bar" id="mob-tab-bar">
+      <button class="mob-tab mob-tab-active" id="tab-map" onclick="switchMobTab('map')">
+        <span class="tab-icon">🗺️</span>MAP
+      </button>
+      <button class="mob-tab" id="tab-list" onclick="switchMobTab('list')">
+        <span class="tab-icon">👥</span>LIST
+      </button>
     </div>
   </div>
 
@@ -1206,9 +1312,31 @@ function debugLog(msg) {
   }
 }
 
-/* ─────────────────────────────────────────────
-   SHA-256 HASH HELPER
-───────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════
+   MOBILE TAB SWITCHER (Supervisor mode)
+═══════════════════════════════════════════════ */
+function switchMobTab(which) {
+  const sidebar  = document.getElementById('sidebar');
+  const map      = document.getElementById('map');
+  const tabMap   = document.getElementById('tab-map');
+  const tabList  = document.getElementById('tab-list');
+  if (!sidebar || !map) return;
+
+  if (which === 'map') {
+    sidebar.classList.add('mob-hidden');
+    map.classList.remove('mob-hidden');
+    tabMap.classList.add('mob-tab-active');
+    tabList.classList.remove('mob-tab-active');
+    // Let Leaflet recalculate size after the map becomes visible
+    setTimeout(() => leafMap && leafMap.invalidateSize(), 120);
+  } else {
+    map.classList.add('mob-hidden');
+    sidebar.classList.remove('mob-hidden');
+    tabList.classList.add('mob-tab-active');
+    tabMap.classList.remove('mob-tab-active');
+  }
+}
+
 async function sha256(text) {
   const data = new TextEncoder().encode(text);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -1396,6 +1524,8 @@ function applyFilters() {
 
     row.addEventListener('click', () => {
       if (tech.lat && tech.lng) {
+        // On mobile: auto-switch to map tab before flying
+        if (window.innerWidth <= 768) switchMobTab('map');
         leafMap.flyTo([tech.lat, tech.lng], 15, { animate: true, duration: 1.2 });
         setTimeout(() => markers[id]?.openPopup(), 1300);
       } else {

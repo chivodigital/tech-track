@@ -411,7 +411,7 @@
     .debug-box {
       background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 0 0 6px 6px;
       padding: 8px 12px;
       margin: 0 16px 10px;
       font-family: var(--mono);
@@ -421,6 +421,22 @@
       max-height: 80px;
       overflow-y: auto;
     }
+
+    .debug-toggle {
+      margin: 0 16px 0;
+      padding: 5px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px 6px 0 0;
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: var(--text3);
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.15s;
+    }
+    .debug-toggle:hover { color: var(--text2); }
+    .debug-toggle.open { border-bottom: none; margin-bottom: 0; }
 
     /* ======================================================
        SUPERVISOR APP
@@ -874,7 +890,10 @@
       <button class="checkout-btn" onclick="techCheckout()">⏹ END SHIFT / CHECK OUT</button>
     </div>
 
-    <div class="debug-box" id="debug-box">— Waiting for activity —</div>
+    <div class="debug-toggle" id="debug-toggle" onclick="toggleDebug()">
+      <span id="debug-toggle-label">▸ ACTIVITY LOG</span>
+    </div>
+    <div class="debug-box" id="debug-box" style="display:none">— Waiting for activity —</div>
   </div>
 
 </div><!-- end tech-app -->
@@ -1050,6 +1069,7 @@ let curLat       = null;
 let curLng       = null;
 let curStatus    = null;
 let curService   = null;
+let lastPushTime = 0;          // throttle GPS→Firebase pushes
 const _debugLines = [];
 
 /* ─────────────────────────────────────────────
@@ -1123,14 +1143,23 @@ function startGps(name, zone) {
   if (watchId !== null) navigator.geolocation.clearWatch(watchId);
 
   debugLog('Starting GPS watch position…');
-  const opts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+  // maximumAge:30000 lets the chip use a cached fix (saves battery).
+  // We throttle Firebase pushes to GPS_INTERVAL_MS so the radio
+  // doesn't fire on every tiny movement.
+  const opts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 };
   
   const onPos = pos => {
     curLat = pos.coords.latitude;
     curLng = pos.coords.longitude;
     setGpsOk();
-    debugLog('GPS update: ' + curLat.toFixed(4) + ', ' + curLng.toFixed(4));
-    pushFb(name, zone);
+    const now = Date.now();
+    if (now - lastPushTime >= GPS_INTERVAL_MS) {
+      debugLog('GPS update → pushing (' + curLat.toFixed(4) + ', ' + curLng.toFixed(4) + ')');
+      pushFb(name, zone);
+    } else {
+      const secsLeft = Math.ceil((GPS_INTERVAL_MS - (now - lastPushTime)) / 1000);
+      debugLog('GPS fix (next push in ' + secsLeft + 's)');
+    }
   };
   
   const onErr = (err) => {
@@ -1181,6 +1210,7 @@ function pushFb(name, zone) {
   };
   debugLog('Pushing to techs/' + techId + '…');
   db.ref('techs/' + techId).update(payload).then(() => {
+    lastPushTime = Date.now();
     document.getElementById('sync-line').textContent =
       '✓ Synced at ' + new Date().toLocaleTimeString();
     debugLog('✓ Sync OK');
@@ -1306,7 +1336,17 @@ function forceSyncNow() {
 }
 
 
-function debugLog(msg) {
+function toggleDebug() {
+  const box    = document.getElementById('debug-box');
+  const toggle = document.getElementById('debug-toggle');
+  const label  = document.getElementById('debug-toggle-label');
+  const open   = box.style.display === 'none';
+  box.style.display = open ? 'block' : 'none';
+  toggle.classList.toggle('open', open);
+  label.textContent = (open ? '▾' : '▸') + ' ACTIVITY LOG';
+}
+
+
   const ts = new Date().toLocaleTimeString();
   _debugLines.push(ts + ' ' + msg);
   if (_debugLines.length > 20) _debugLines.shift();

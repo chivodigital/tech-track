@@ -868,9 +868,11 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 /* ─────────────────────────────────────────────
-   APP CONFIG  ← CHANGE SUPERVISOR PASSWORD HERE
+   APP CONFIG
+   To change password: hash your new password with SHA-256
+   and replace the hash below. Use any online SHA-256 tool.
 ───────────────────────────────────────────── */
-const SUPERVISOR_PASSWORD  = "testtest123";   // ← change this
+const SUPERVISOR_PASS_HASH = "626aa60100e38a2b0a8c9b3512116bfb3ff9db5b986b21b27c2989e011629435";
 const GPS_INTERVAL_MS      = 45000;         // 45 sec
 const OFFLINE_MS           = 5 * 60 * 1000; // 5 min
 
@@ -1181,12 +1183,23 @@ function debugLog(msg) {
   }
 }
 
+/* ─────────────────────────────────────────────
+   SHA-256 HASH HELPER
+───────────────────────────────────────────── */
+async function sha256(text) {
+  const data = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /* ═══════════════════════════════════════════════
    SUPERVISOR APP
 ═══════════════════════════════════════════════ */
-function checkPassword() {
+async function checkPassword() {
   const val = document.getElementById('sup-pass').value;
-  if (val === SUPERVISOR_PASSWORD) {
+  const hash = await sha256(val);
+  if (hash === SUPERVISOR_PASS_HASH) {
     document.getElementById('password-screen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'flex';
     initDashboard();

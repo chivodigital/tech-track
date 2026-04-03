@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>FieldTrack — Field Service Monitor</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <!-- Firebase Compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    /* ======================================================
+       BASE VARIABLES & RESET
+    ====================================================== */
+    :root {
+      --bg:         #0a0e1a;
+      --bg2:        #111827;
+      --bg3:        #1a2234;
+      --border:     #1e2d45;
+      --border2:    #2a3f5a;
+      --text:       #e2eaf8;
+      --text2:      #8099b8;
+      --text3:      #4a607a;
+      --accent:     #00d4ff;
+      --accent2:    #0099cc;
+      --blue:       #3b82f6;
+      --green:      #22c55e;
+      --amber:      #f59e0b;
+      --grey:       #6b7280;
+      --red:        #ef4444;
+      --mono:       'IBM Plex Mono', monospace;
+      --sans:       'IBM Plex Sans', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg2); }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    /* ======================================================
+       SHARED COMPONENTS
+    ====================================================== */
+    .app-mark {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 1.4rem;
+      color: var(--accent);
+      letter-spacing: -1px;
+    }
+    .app-mark span { color: var(--text2); font-weight: 400; }
+
+    .field-label {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--text3);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 10px 14px;
+      font-family: var(--sans);
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+      margin-bottom: 16px;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238099b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+    select option { background: var(--bg2); }
+
+    .btn {
+      width: 100%;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: #00bbdd; transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text2);
+      border: 1px solid var(--border2);
+    }
+    .btn-ghost:hover { background: var(--bg3); color: var(--text); }
+
+    .error-msg {
+      color: var(--red);
+      font-size: 0.78rem;
+      font-family: var(--mono);
+      margin-top: 8px;
+      text-align: center;
+      min-height: 18px;
+    }
+
+    /* ======================================================
+       MODE SELECTOR (default view)
+    ====================================================== */
+    #mode-selector {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      gap: 0;
+      background: var(--bg);
+    }
+
+    .mode-grid {
+      display: flex;
+      gap: 16px;
+      margin-top: 32px;
+    }
+
+    .mode-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px 28px;
+      text-align: center;
+      text-decoration: none;
+      color: var(--text);
+      transition: all 0.2s;
+      cursor: pointer;
+      min-width: 160px;
+    }
+    .mode-card:hover {
+      border-color: var(--accent);
+      background: var(--bg3);
+      transform: translateY(-3px);
+    }
+    .mode-card .mode-icon { font-size: 2.4rem; margin-bottom: 12px; }
+    .mode-card .mode-title { font-family: var(--mono); font-weight: 700; font-size: 0.9rem; letter-spacing: 0.05em; color: var(--accent); }
+    .mode-card .mode-sub { font-size: 0.75rem; color: var(--text3); margin-top: 4px; }
+
+    /* ======================================================
+       TECH APP
+    ====================================================== */
+    #tech-app {
+      display: none;
+      height: 100vh;
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* --- Login Screen --- */
+    #login-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .login-brand { text-align: center; margin-bottom: 32px; }
+    .login-brand .tagline { font-size: 0.78rem; color: var(--text3); font-family: var(--mono); margin-top: 6px; letter-spacing: 0.08em; }
+
+    .login-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 400px;
+    }
+    .login-card h2 {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--text3);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    /* --- Tech Header --- */
+    .tech-header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .tech-header-left .tech-name {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--accent);
+    }
+    .tech-header-left .tech-zone {
+      font-size: 0.72rem;
+      color: var(--text3);
+      margin-top: 2px;
+    }
+    .not-you-btn {
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--text2);
+      border-radius: 5px;
+      padding: 5px 10px;
+      font-size: 0.72rem;
+      font-family: var(--mono);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .not-you-btn:hover { border-color: var(--red); color: var(--red); }
+
+    /* --- GPS Bar --- */
+    .gps-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      font-size: 0.72rem;
+      font-family: var(--mono);
+      color: var(--text3);
+      flex-shrink: 0;
+    }
+    .gps-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+    }
+    .gps-dot.active { animation: blink 2s ease-in-out infinite; }
+    .gps-dot.error { background: var(--red); }
+    .gps-bar.error-bar { background: #1a0808; border-color: #3a0c0c; }
+    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.25;} }
+
+    /* --- Section --- */
+    .section-head {
+      padding: 16px 16px 8px;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--text3);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* --- Status Grid --- */
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 14px 16px;
+    }
+
+    .status-btn {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: center;
+      color: var(--text2);
+      font-family: var(--sans);
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    .status-btn .status-icon { font-size: 1.5rem; display: block; margin-bottom: 6px; }
+    .status-btn:active { transform: scale(0.97); }
+
+    .status-btn[data-s="En Route"].sel  { background: #0d2147; border-color: var(--blue); color: var(--blue); }
+    .status-btn[data-s="On Site"].sel   { background: #0a2215; border-color: var(--green); color: var(--green); }
+    .status-btn[data-s="Done"].sel      { background: #1c1e22; border-color: var(--grey); color: #d1d5db; }
+    .status-btn[data-s="Break"].sel     { background: #1e1505; border-color: var(--amber); color: var(--amber); }
+
+    /* --- Service Grid --- */
+    .service-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 16px 16px;
+    }
+
+    .svc-chip {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.78rem;
+      font-family: var(--mono);
+      color: var(--text2);
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .svc-chip:active { transform: scale(0.96); }
+    .svc-chip.sel {
+      background: #051c2e;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* --- Checkout --- */
+    .checkout-area {
+      padding: 0 16px 24px;
+    }
+    .checkout-btn {
+      width: 100%;
+      background: transparent;
+      border: 1px solid #3a0c0c;
+      border-radius: 8px;
+      color: #f87171;
+      padding: 13px;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .checkout-btn:hover { background: #1a0808; border-color: var(--red); }
+
+    /* --- Last Sync --- */
+    .sync-line {
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--text3);
+      padding: 8px 16px 4px;
+    }
+
+    /* ======================================================
+       SUPERVISOR APP
+    ====================================================== */
+    #super-app {
+      display: none;
+      height: 100vh;
+      flex-direction: column;
+    }
+
+    /* --- Password Screen --- */
+    #password-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    /* --- Dashboard --- */
+    #dashboard {
+      display: none;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Super Header */
+    .super-header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .super-header-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .count-badge {
+      background: var(--bg);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--text2);
+    }
+    .count-badge .live-num { color: var(--green); font-weight: 700; }
+    .timestamp-label {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--text3);
+    }
+    .legend {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.65rem;
+      font-family: var(--mono);
+      color: var(--text3);
+    }
+    .legend-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+    }
+
+    /* Dashboard body */
+    .dashboard-body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      width: 300px;
+      min-width: 300px;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .filter-bar {
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .filter-bar select {
+      margin-bottom: 0;
+      font-size: 0.78rem;
+      padding: 8px 32px 8px 10px;
+      font-family: var(--mono);
+    }
+
+    .tech-list-wrap { overflow-y: auto; flex: 1; }
+
+    .tech-row {
+      border-bottom: 1px solid var(--border);
+      padding: 11px 14px;
+      cursor: pointer;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      transition: background 0.12s;
+    }
+    .tech-row:hover { background: var(--bg3); }
+    .tech-row:active { background: var(--bg); }
+
+    .row-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .row-body { flex: 1; min-width: 0; }
+    .row-name {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.82rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .row-meta {
+      font-size: 0.7rem;
+      color: var(--text3);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .row-status {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      margin-top: 3px;
+    }
+    .row-time {
+      font-size: 0.65rem;
+      color: var(--text3);
+      margin-top: 2px;
+    }
+    .no-gps-tag {
+      font-size: 0.6rem;
+      font-family: var(--mono);
+      color: var(--amber);
+      background: #1e1505;
+      border: 1px solid #3a2a0a;
+      border-radius: 3px;
+      padding: 1px 5px;
+      display: inline-block;
+      margin-left: 4px;
+    }
+
+    .empty-list {
+      text-align: center;
+      padding: 40px 16px;
+      color: var(--text3);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      line-height: 1.7;
+    }
+
+    /* Map */
+    #map {
+      flex: 1;
+      background: #0d1825;
+    }
+
+    /* Popup styling */
+    .leaflet-popup-content-wrapper {
+      background: var(--bg2) !important;
+      border: 1px solid var(--border2) !important;
+      border-radius: 8px !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6) !important;
+      color: var(--text) !important;
+    }
+    .leaflet-popup-tip { background: var(--bg2) !important; }
+    .leaflet-popup-content { margin: 14px 16px !important; }
+
+    .popup-name {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.9rem;
+      margin-bottom: 6px;
+    }
+    .popup-row {
+      font-size: 0.75rem;
+      color: var(--text2);
+      margin-top: 3px;
+      display: flex;
+      gap: 4px;
+    }
+    .popup-row span { color: var(--text3); }
+    .popup-status {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    /* Status color classes */
+    .c-blue  { color: var(--blue); }
+    .c-green { color: var(--green); }
+    .c-grey  { color: var(--grey); }
+    .c-amber { color: var(--amber); }
+    .c-red   { color: var(--red); }
+
+    .bg-blue  { background: var(--blue); }
+    .bg-green { background: var(--green); }
+    .bg-grey  { background: var(--grey); }
+    .bg-amber { background: var(--amber); }
+    .bg-red   { background: var(--red); }
+
+    /* Responsive */
+    @media (max-width: 700px) {
+      #sidebar { width: 240px; min-width: 240px; }
+      .legend { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ================================================
+     MODE SELECTOR (no ?mode param)
+================================================ -->
+<div id="mode-selector">
+  <div class="app-mark">FIELD<span>TRACK</span></div>
+  <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text3);letter-spacing:0.1em;margin-top:6px;">FIELD SERVICE MONITOR — EGYPT</div>
+  <div class="mode-grid">
+    <a class="mode-card" href="?mode=tech">
+      <div class="mode-icon">📱</div>
+      <div class="mode-title">TECH MODE</div>
+      <div class="mode-sub">For field technicians</div>
+    </a>
+    <a class="mode-card" href="?mode=super">
+      <div class="mode-icon">🖥️</div>
+      <div class="mode-title">SUPERVISOR</div>
+      <div class="mode-sub">Live monitoring dashboard</div>
+    </a>
+  </div>
+</div>
+
+<!-- ================================================
+     TECH APP
+================================================ -->
+<div id="tech-app">
+
+  <!-- LOGIN -->
+  <div id="login-screen">
+    <div class="login-brand">
+      <div class="app-mark">FIELD<span>TRACK</span></div>
+      <div class="tagline">// FIELD SERVICE MONITOR</div>
+    </div>
+    <div class="login-card">
+      <h2>// TECH LOGIN</h2>
+      <div class="field-label">Full Name</div>
+      <input type="text" id="ti-name" placeholder="Ahmed Hassan" autocomplete="name">
+      <div class="field-label">Zone</div>
+      <select id="ti-zone">
+        <option value="">— Select Zone —</option>
+        <option value="Cairo">Cairo</option>
+        <option value="Giza">Giza</option>
+        <option value="Delta">Delta</option>
+        <option value="East">East</option>
+        <option value="Upper">Upper</option>
+      </select>
+      <button class="btn" onclick="techLogin()">START SHIFT →</button>
+      <div class="error-msg" id="login-err"></div>
+    </div>
+  </div>
+
+  <!-- MAIN SCREEN -->
+  <div id="main-screen" style="display:none">
+    <div class="tech-header">
+      <div class="tech-header-left">
+        <div class="tech-name" id="hdr-name">—</div>
+        <div class="tech-zone" id="hdr-zone">—</div>
+      </div>
+      <button class="not-you-btn" onclick="techLogout()">✕ Not you?</button>
+    </div>
+
+    <div class="gps-bar" id="gps-bar">
+      <div class="gps-dot active" id="gps-dot"></div>
+      <span id="gps-text">Acquiring GPS…</span>
+    </div>
+
+    <div class="section-head">// CURRENT STATUS</div>
+    <div class="status-grid">
+      <button class="status-btn" data-s="En Route" onclick="setStatus('En Route')">
+        <span class="status-icon">🚗</span>En Route
+      </button>
+      <button class="status-btn" data-s="On Site" onclick="setStatus('On Site')">
+        <span class="status-icon">🔧</span>On Site
+      </button>
+      <button class="status-btn" data-s="Done" onclick="setStatus('Done')">
+        <span class="status-icon">✅</span>Done
+      </button>
+      <button class="status-btn" data-s="Break" onclick="setStatus('Break')">
+        <span class="status-icon">☕</span>Break
+      </button>
+    </div>
+
+    <div class="section-head">// SERVICE TYPE</div>
+    <div class="service-grid">
+      <div class="svc-chip" data-svc="Network"               onclick="setService('Network')">Network</div>
+      <div class="svc-chip" data-svc="Enterprise"            onclick="setService('Enterprise')">Enterprise</div>
+      <div class="svc-chip" data-svc="Enterprise Acceptance" onclick="setService('Enterprise Acceptance')">Ent. Acceptance</div>
+      <div class="svc-chip" data-svc="ADSL"                  onclick="setService('ADSL')">ADSL</div>
+      <div class="svc-chip" data-svc="Fixed Voice"           onclick="setService('Fixed Voice')">Fixed Voice</div>
+      <div class="svc-chip" data-svc="Gated"                 onclick="setService('Gated')">Gated</div>
+      <div class="svc-chip" data-svc="Home Visit"            onclick="setService('Home Visit')">Home Visit</div>
+      <div class="svc-chip" data-svc="Special Tasks"         onclick="setService('Special Tasks')">Special Tasks</div>
+    </div>
+
+    <div class="sync-line" id="sync-line">⏳ Syncing…</div>
+
+    <div class="checkout-area">
+      <button class="checkout-btn" onclick="techCheckout()">⏹ END SHIFT / CHECK OUT</button>
+    </div>
+  </div>
+
+</div><!-- end tech-app -->
+
+<!-- ================================================
+     SUPERVISOR APP
+================================================ -->
+<div id="super-app">
+
+  <!-- PASSWORD -->
+  <div id="password-screen">
+    <div class="login-brand" style="text-align:center;margin-bottom:32px">
+      <div class="app-mark">FIELD<span>TRACK</span></div>
+      <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text3);margin-top:6px;letter-spacing:0.08em">SUPERVISOR DASHBOARD</div>
+    </div>
+    <div class="login-card" style="max-width:340px">
+      <h2>// ACCESS CODE</h2>
+      <div class="field-label">Password</div>
+      <input type="password" id="sup-pass" placeholder="Enter supervisor password"
+             onkeydown="if(event.key==='Enter')checkPassword()">
+      <button class="btn" onclick="checkPassword()">ENTER DASHBOARD →</button>
+      <div class="error-msg" id="pass-err"></div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard">
+    <div class="super-header">
+      <div class="app-mark" style="font-size:1.1rem">FIELD<span>TRACK</span></div>
+      <div class="super-header-right">
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot bg-blue"></div>En Route</div>
+          <div class="legend-item"><div class="legend-dot bg-green"></div>On Site</div>
+          <div class="legend-item"><div class="legend-dot bg-amber"></div>Break</div>
+          <div class="legend-item"><div class="legend-dot bg-grey"></div>Done</div>
+          <div class="legend-item"><div class="legend-dot bg-red"></div>Offline</div>
+        </div>
+        <div class="count-badge">Live <span class="live-num" id="live-count">0</span> / <span id="total-count">0</span></div>
+        <div class="timestamp-label" id="last-refresh">—</div>
+      </div>
+    </div>
+
+    <div class="dashboard-body">
+      <!-- Sidebar -->
+      <div id="sidebar">
+        <div class="filter-bar">
+          <select id="f-zone" onchange="applyFilters()">
+            <option value="">All Zones</option>
+            <option value="Cairo">Cairo</option>
+            <option value="Giza">Giza</option>
+            <option value="Delta">Delta</option>
+            <option value="East">East</option>
+            <option value="Upper">Upper</option>
+          </select>
+          <select id="f-status" onchange="applyFilters()">
+            <option value="">All Statuses</option>
+            <option value="En Route">En Route</option>
+            <option value="On Site">On Site</option>
+            <option value="Done">Done</option>
+            <option value="Break">Break</option>
+            <option value="Offline">Offline</option>
+          </select>
+          <select id="f-service" onchange="applyFilters()">
+            <option value="">All Services</option>
+            <option value="Network">Network</option>
+            <option value="Enterprise">Enterprise</option>
+            <option value="Enterprise Acceptance">Ent. Acceptance</option>
+            <option value="ADSL">ADSL</option>
+            <option value="Fixed Voice">Fixed Voice</option>
+            <option value="Gated">Gated</option>
+            <option value="Home Visit">Home Visit</option>
+            <option value="Special Tasks">Special Tasks</option>
+          </select>
+        </div>
+        <div class="tech-list-wrap" id="tech-list"></div>
+      </div>
+
+      <!-- Map -->
+      <div id="map"></div>
+    </div>
+  </div>
+
+</div><!-- end super-app -->
+
+<!-- ================================================
+     JAVASCRIPT
+================================================ -->
+<script>
+'use strict';
+
+/* ─────────────────────────────────────────────
+   FIREBASE CONFIG
+───────────────────────────────────────────── */
+const firebaseConfig = {
+  apiKey:            "AIzaSyDiF4mODMPTEhXxunpTpHGDLt17oHZsfGg",
+  authDomain:        "tech-tracking2026.firebaseapp.com",
+  databaseURL:       "https://tech-tracking2026-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "tech-tracking2026",
+  storageBucket:     "tech-tracking2026.firebasestorage.app",
+  messagingSenderId: "551164475208",
+  appId:             "1:551164475208:web:76845cde1d0abc5ad1e57d"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+/* ─────────────────────────────────────────────
+   APP CONFIG  ← CHANGE SUPERVISOR PASSWORD HERE
+───────────────────────────────────────────── */
+const SUPERVISOR_PASSWORD  = "testtest123";   // ← change this
+const GPS_INTERVAL_MS      = 45000;         // 45 sec
+const OFFLINE_MS           = 5 * 60 * 1000; // 5 min
+
+const STATUS_COLOR = {
+  "En Route": "#3b82f6",
+  "On Site":  "#22c55e",
+  "Done":     "#6b7280",
+  "Break":    "#f59e0b",
+  "Offline":  "#ef4444"
+};
+const STATUS_CLASS = {
+  "En Route": "c-blue",
+  "On Site":  "c-green",
+  "Done":     "c-grey",
+  "Break":    "c-amber",
+  "Offline":  "c-red"
+};
+const STATUS_DOT_CLASS = {
+  "En Route": "bg-blue",
+  "On Site":  "bg-green",
+  "Done":     "bg-grey",
+  "Break":    "bg-amber",
+  "Offline":  "bg-red"
+};
+
+/* ─────────────────────────────────────────────
+   UTILITIES
+───────────────────────────────────────────── */
+function normId(name) {
+  return name.trim().toLowerCase().replace(/\s+/g, '.');
+}
+
+function timeAgo(ts) {
+  if (!ts) return 'Never';
+  const d = Date.now() - ts;
+  const m = Math.floor(d / 60000);
+  if (m < 1)  return 'Just now';
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m/60)}h ${m%60}m ago`;
+}
+
+function effectiveStatus(tech) {
+  if (!tech || !tech.active) return 'Offline';
+  if (!tech.lastSeen || (Date.now() - tech.lastSeen) > OFFLINE_MS) return 'Offline';
+  return tech.status || 'Offline';
+}
+
+/* ─────────────────────────────────────────────
+   MODE ROUTER
+───────────────────────────────────────────── */
+const mode = new URLSearchParams(window.location.search).get('mode');
+
+if (mode === 'tech') {
+  document.getElementById('tech-app').style.display = 'flex';
+  initTechApp();
+} else if (mode === 'super') {
+  document.getElementById('super-app').style.display = 'flex';
+} else {
+  document.getElementById('mode-selector').style.display = 'flex';
+}
+
+/* ═══════════════════════════════════════════════
+   TECH APP
+═══════════════════════════════════════════════ */
+let gpsTimer     = null;
+let techId       = null;
+let curLat       = null;
+let curLng       = null;
+let curStatus    = null;
+let curService   = null;
+
+function initTechApp() {
+  const savedName = localStorage.getItem('ft_name');
+  const savedZone = localStorage.getItem('ft_zone');
+  if (savedName && savedZone) {
+    techId = normId(savedName);
+    showMainScreen(savedName, savedZone);
+  } else {
+    document.getElementById('login-screen').style.display = 'flex';
+  }
+}
+
+function techLogin() {
+  const name = document.getElementById('ti-name').value.trim();
+  const zone = document.getElementById('ti-zone').value;
+  const err  = document.getElementById('login-err');
+  if (!name) { err.textContent = 'Enter your full name.'; return; }
+  if (!zone) { err.textContent = 'Select your zone.'; return; }
+  localStorage.setItem('ft_name', name);
+  localStorage.setItem('ft_zone', zone);
+  techId = normId(name);
+  showMainScreen(name, zone);
+}
+
+function showMainScreen(name, zone) {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'block';
+  document.getElementById('hdr-name').textContent = name;
+  document.getElementById('hdr-zone').textContent = '📍 ' + zone;
+
+  // Restore saved selections
+  const ss = localStorage.getItem('ft_status');
+  const sv = localStorage.getItem('ft_service');
+  if (ss) setStatus(ss, false);
+  if (sv) setService(sv, false);
+
+  startGps(name, zone);
+}
+
+function startGps(name, zone) {
+  if (!navigator.geolocation) {
+    setGpsErr('GPS not supported on this device');
+    return;
+  }
+  const opts = { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 };
+  const onPos = pos => {
+    curLat = pos.coords.latitude;
+    curLng = pos.coords.longitude;
+    setGpsOk();
+    pushFb(name, zone);
+  };
+  const onErr = () => {
+    setGpsErr('GPS access denied — enable location in browser settings');
+    pushFb(name, zone); // still push heartbeat without coords
+  };
+  navigator.geolocation.getCurrentPosition(onPos, onErr, opts);
+  clearInterval(gpsTimer);
+  gpsTimer = setInterval(() => {
+    navigator.geolocation.getCurrentPosition(onPos, onErr, opts);
+  }, GPS_INTERVAL_MS);
+}
+
+function pushFb(name, zone) {
+  if (!techId) return;
+  db.ref('techs/' + techId).update({
+    name:     name,
+    zone:     zone,
+    status:   curStatus  || 'En Route',
+    service:  curService || '',
+    lat:      curLat,
+    lng:      curLng,
+    lastSeen: firebase.database.ServerValue.TIMESTAMP,
+    active:   true
+  }).then(() => {
+    document.getElementById('sync-line').textContent =
+      '✓ Synced at ' + new Date().toLocaleTimeString();
+  }).catch(() => {
+    document.getElementById('sync-line').textContent = '⚠ Sync failed — check internet';
+  });
+}
+
+function setGpsOk() {
+  const dot = document.getElementById('gps-dot');
+  dot.className = 'gps-dot active';
+  document.getElementById('gps-text').textContent = 'GPS active — location sharing on';
+  document.getElementById('gps-bar').className = 'gps-bar';
+}
+function setGpsErr(msg) {
+  const dot = document.getElementById('gps-dot');
+  dot.className = 'gps-dot error';
+  document.getElementById('gps-text').textContent = msg;
+  document.getElementById('gps-bar').className = 'gps-bar error-bar';
+}
+
+function setStatus(s, push = true) {
+  curStatus = s;
+  localStorage.setItem('ft_status', s);
+  document.querySelectorAll('.status-btn').forEach(b => {
+    b.classList.toggle('sel', b.dataset.s === s);
+  });
+  if (push) {
+    pushFb(localStorage.getItem('ft_name'), localStorage.getItem('ft_zone'));
+  }
+}
+
+function setService(sv, push = true) {
+  curService = sv;
+  localStorage.setItem('ft_service', sv);
+  document.querySelectorAll('.svc-chip').forEach(c => {
+    c.classList.toggle('sel', c.dataset.svc === sv);
+  });
+  if (push) {
+    pushFb(localStorage.getItem('ft_name'), localStorage.getItem('ft_zone'));
+  }
+}
+
+function techCheckout() {
+  if (!confirm('End your shift and check out?')) return;
+  if (techId) {
+    db.ref('techs/' + techId).update({
+      active:   false,
+      status:   'Done',
+      lastSeen: firebase.database.ServerValue.TIMESTAMP
+    });
+  }
+  clearInterval(gpsTimer);
+  localStorage.removeItem('ft_status');
+  localStorage.removeItem('ft_service');
+  document.getElementById('main-screen').style.display  = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  techId = curStatus = curService = null;
+  curLat = curLng = null;
+}
+
+function techLogout() {
+  if (!confirm('Switch profile? Your shift will stay active for 5 minutes.')) return;
+  clearInterval(gpsTimer);
+  localStorage.clear();
+  techId = curStatus = curService = null;
+  curLat = curLng = null;
+  document.getElementById('main-screen').style.display  = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('ti-name').value = '';
+  document.getElementById('ti-zone').value = '';
+}
+
+/* ═══════════════════════════════════════════════
+   SUPERVISOR APP
+═══════════════════════════════════════════════ */
+function checkPassword() {
+  const val = document.getElementById('sup-pass').value;
+  if (val === SUPERVISOR_PASSWORD) {
+    document.getElementById('password-screen').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'flex';
+    initDashboard();
+  } else {
+    document.getElementById('pass-err').textContent = 'Incorrect password.';
+    document.getElementById('sup-pass').value = '';
+  }
+}
+
+let leafMap   = null;
+let markers   = {};
+let allTechs  = {};
+
+function initDashboard() {
+  // Init Leaflet map — centered on Egypt
+  leafMap = L.map('map', { zoomControl: true }).setView([26.82, 30.8], 6);
+  
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap, © CARTO',
+    subdomains: 'abcd',
+    maxZoom: 20
+  }).addTo(leafMap);
+
+  // FIX: Force Leaflet to recalculate map size after the dashboard becomes visible
+  setTimeout(() => {
+    leafMap.invalidateSize();
+  }, 250);
+
+  // Real-time Firebase listener
+  db.ref('techs').on('value', snap => {
+    allTechs = snap.val() || {};
+    rebuildMarkers();
+    applyFilters();
+    document.getElementById('last-refresh').textContent =
+      'Refreshed ' + new Date().toLocaleTimeString();
+  });
+
+  // Re-evaluate offline status every 60s even without Firebase change
+  setInterval(() => {
+    applyFilters();
+    updateAllMarkerColors();
+  }, 60000);
+}
+function makeIcon(tech, status) {
+  const color = STATUS_COLOR[status] || '#ef4444';
+  const initials = (tech.name || '?')
+    .split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase();
+  return L.divIcon({
+    className: '',
+    iconSize:  [0, 0],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -18],
+    html: `
+      <div style="position:relative;width:24px;height:24px;">
+        <div style="
+          width:24px;height:24px;border-radius:50%;
+          background:${color};border:2px solid #fff;
+          box-shadow:0 2px 8px rgba(0,0,0,0.5);
+          display:flex;align-items:center;justify-content:center;
+          font-size:8px;font-weight:700;font-family:var(--mono);color:#fff;
+        ">${initials}</div>
+        <div style="
+          position:absolute;top:-20px;left:50%;transform:translateX(-50%);
+          background:rgba(10,14,26,0.92);color:#e2eaf8;
+          font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;
+          white-space:nowrap;padding:2px 6px;border-radius:3px;
+          border:1px solid rgba(255,255,255,0.1);pointer-events:none;
+        ">${tech.name || '—'}</div>
+      </div>`
+  });
+}
+
+function makePopup(tech, status) {
+  const color = STATUS_COLOR[status] || '#ef4444';
+  return `
+    <div>
+      <div class="popup-name">${tech.name || '—'}</div>
+      <div class="popup-status" style="color:${color}">● ${status}</div>
+      <div class="popup-row"><span>Zone</span>${tech.zone || '—'}</div>
+      <div class="popup-row"><span>Service</span>${tech.service || '—'}</div>
+      <div class="popup-row"><span>Last seen</span>${timeAgo(tech.lastSeen)}</div>
+      ${tech.lat ? `<div class="popup-row"><span>GPS</span>${tech.lat.toFixed(4)}, ${tech.lng.toFixed(4)}</div>` : '<div class="popup-row" style="color:#f59e0b">No GPS location</div>'}
+    </div>`;
+}
+
+function rebuildMarkers() {
+  // Remove stale markers
+  Object.keys(markers).forEach(id => {
+    if (!allTechs[id]) {
+      leafMap.removeLayer(markers[id]);
+      delete markers[id];
+    }
+  });
+
+  Object.entries(allTechs).forEach(([id, tech]) => {
+    const status = effectiveStatus(tech);
+    if (!tech.lat || !tech.lng) {
+      if (markers[id]) { leafMap.removeLayer(markers[id]); delete markers[id]; }
+      return;
+    }
+    const icon  = makeIcon(tech, status);
+    const popup = makePopup(tech, status);
+    if (markers[id]) {
+      markers[id].setLatLng([tech.lat, tech.lng]);
+      markers[id].setIcon(icon);
+      if (markers[id].getPopup()) markers[id].getPopup().setContent(popup);
+    } else {
+      markers[id] = L.marker([tech.lat, tech.lng], { icon })
+        .bindPopup(popup, { className: '' })
+        .addTo(leafMap);
+    }
+  });
+}
+
+function updateAllMarkerColors() {
+  Object.entries(allTechs).forEach(([id, tech]) => {
+    if (!markers[id]) return;
+    const status = effectiveStatus(tech);
+    markers[id].setIcon(makeIcon(tech, status));
+    if (markers[id].getPopup()) markers[id].getPopup().setContent(makePopup(tech, status));
+  });
+}
+
+function applyFilters() {
+  const fz = document.getElementById('f-zone').value;
+  const fs = document.getElementById('f-status').value;
+  const fv = document.getElementById('f-service').value;
+
+  let live = 0, total = 0;
+  const list = document.getElementById('tech-list');
+  list.innerHTML = '';
+
+  // Sort: active non-offline first, then alphabetical
+  const sorted = Object.entries(allTechs).sort(([,a],[,b]) => {
+    const aOn = a.active && effectiveStatus(a) !== 'Offline' ? 0 : 1;
+    const bOn = b.active && effectiveStatus(b) !== 'Offline' ? 0 : 1;
+    if (aOn !== bOn) return aOn - bOn;
+    return (a.name||'').localeCompare(b.name||'');
+  });
+
+  sorted.forEach(([id, tech]) => {
+    if (tech.active) total++;
+    const status = effectiveStatus(tech);
+    if (tech.active && status !== 'Offline') live++;
+
+    // Filter
+    if (fz && tech.zone !== fz) return;
+    if (fs && status !== fs) return;
+    if (fv && tech.service !== fv) return;
+
+    const color     = STATUS_COLOR[status]   || '#ef4444';
+    const dotCls    = STATUS_DOT_CLASS[status] || 'bg-red';
+    const statusCls = STATUS_CLASS[status]   || 'c-red';
+    const hasGps    = !!(tech.lat && tech.lng);
+
+    const row = document.createElement('div');
+    row.className = 'tech-row';
+    row.innerHTML = `
+      <div class="row-dot ${dotCls}"></div>
+      <div class="row-body">
+        <div class="row-name">
+          ${tech.name || id}
+          ${!hasGps ? '<span class="no-gps-tag">no GPS</span>' : ''}
+        </div>
+        <div class="row-meta">
+          📍 ${tech.zone || '—'} &nbsp;·&nbsp; ${tech.service || 'No service set'}
+        </div>
+        <div class="row-status ${statusCls}">${status}</div>
+        <div class="row-time">${timeAgo(tech.lastSeen)}</div>
+      </div>`;
+
+    row.addEventListener('click', () => {
+      if (tech.lat && tech.lng) {
+        leafMap.flyTo([tech.lat, tech.lng], 15, { animate: true, duration: 1.2 });
+        setTimeout(() => markers[id]?.openPopup(), 1300);
+      } else {
+        alert(`${tech.name || id} has no GPS location. Status: ${status}`);
+      }
+    });
+
+    list.appendChild(row);
+  });
+
+  document.getElementById('live-count').textContent  = live;
+  document.getElementById('total-count').textContent = total;
+
+  if (list.children.length === 0) {
+    list.innerHTML = '<div class="empty-list">No techs match<br>selected filters.</div>';
+  }
+}
+</script>
+</body>
+</html>

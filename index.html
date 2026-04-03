@@ -923,7 +923,7 @@ function effectiveStatus(tech) {
 /* ═══════════════════════════════════════════════
    TECH APP
 ═══════════════════════════════════════════════ */
-let gpsTimer     = null;
+let watchId      = null;
 let techId       = null;
 let curLat       = null;
 let curLng       = null;
@@ -997,31 +997,44 @@ function startGps(name, zone) {
     debugLog('ERROR: navigator.geolocation not available');
     return;
   }
-  debugLog('Requesting GPS permission…');
-  const opts = { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 };
+  
+  // Clear any existing watch
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+
+  debugLog('Starting GPS watch position…');
+  const opts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+  
   const onPos = pos => {
     curLat = pos.coords.latitude;
     curLng = pos.coords.longitude;
     setGpsOk();
-    debugLog('GPS fix: ' + curLat.toFixed(4) + ', ' + curLng.toFixed(4));
+    debugLog('GPS update: ' + curLat.toFixed(4) + ', ' + curLng.toFixed(4));
     pushFb(name, zone);
   };
+  
   const onErr = (err) => {
     const reasons = {
       1: 'Permission denied — open browser settings → allow Location',
       2: 'Position unavailable — try going outdoors',
-      3: 'GPS timed out — will retry'
+      3: 'GPS timed out — retrying…'
     };
     const msg = reasons[err.code] || ('GPS error code ' + err.code);
     setGpsErr(msg);
     debugLog('GPS error: ' + msg);
-    pushFb(name, zone); // still push heartbeat without coords
+    // Push even on error to keep status alive
+    pushFb(name, zone);
   };
-  navigator.geolocation.getCurrentPosition(onPos, onErr, opts);
-  clearInterval(gpsTimer);
-  gpsTimer = setInterval(() => {
-    navigator.geolocation.getCurrentPosition(onPos, onErr, opts);
-  }, GPS_INTERVAL_MS);
+
+  // watchPosition is better for mobile background tracking
+  watchId = navigator.geolocation.watchPosition(onPos, onErr, opts);
+}
+
+function stopGps() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    debugLog('GPS tracking stopped.');
+  }
 }
 
 function pushFb(name, zone) {
@@ -1100,7 +1113,7 @@ function techCheckout() {
       lastSeen: firebase.database.ServerValue.TIMESTAMP
     });
   }
-  clearInterval(gpsTimer);
+  stopGps();
   localStorage.removeItem('ft_status');
   localStorage.removeItem('ft_service');
   document.getElementById('main-screen').style.display  = 'none';
@@ -1111,7 +1124,7 @@ function techCheckout() {
 
 function techLogout() {
   if (!confirm('Switch profile? Your shift will stay active for 5 minutes.')) return;
-  clearInterval(gpsTimer);
+  stopGps();
   localStorage.clear();
   techId = curStatus = curService = null;
   curLat = curLng = null;

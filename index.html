@@ -597,6 +597,22 @@
       line-height: 1.7;
     }
 
+    .del-tech-btn {
+      background: none;
+      border: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+      opacity: 0.25;
+      padding: 4px 2px;
+      flex-shrink: 0;
+      align-self: center;
+      transition: opacity 0.15s, transform 0.15s;
+      line-height: 1;
+    }
+    .tech-row:hover .del-tech-btn { opacity: 0.6; }
+    .del-tech-btn:hover { opacity: 1 !important; transform: scale(1.2); }
+    .del-tech-btn:active { transform: scale(0.9); }
+
     /* Map */
     #map {
       flex: 1;
@@ -648,10 +664,6 @@
     .bg-amber { background: var(--amber); }
     .bg-red   { background: var(--red); }
 
-    /* ======================================================
-       MOBILE — SUPERVISOR MODE
-    ====================================================== */
-
     /* Mobile tab bar — hidden on desktop */
     .mob-tab-bar { display: none; }
 
@@ -668,6 +680,34 @@
       .legend { display: none; }
       .count-badge { font-size: 0.7rem; padding: 3px 10px; }
       .timestamp-label { font-size: 0.58rem; width: 100%; text-align: right; }
+
+      /* ── MAP / LIST toggle pill in the header ── */
+      .mob-tab-bar {
+        display: flex;
+        background: var(--bg);
+        border: 1px solid var(--border2);
+        border-radius: 6px;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      .mob-tab {
+        background: transparent;
+        border: none;
+        color: var(--text3);
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        padding: 5px 11px;
+        cursor: pointer;
+        transition: color 0.15s, background 0.15s;
+        white-space: nowrap;
+      }
+      .mob-tab.mob-tab-active {
+        color: var(--bg);
+        background: var(--accent);
+      }
+      .mob-tab:active { opacity: 0.8; }
 
       /* ── Dashboard body: stacked, full-height ── */
       #dashboard { height: 100vh; }
@@ -719,39 +759,6 @@
 
       /* ── Mob-hidden utility: toggling panes ── */
       .mob-hidden { display: none !important; }
-
-      /* ── Mobile tab bar ── */
-      .mob-tab-bar {
-        display: flex;
-        flex-shrink: 0;
-        background: var(--bg2);
-        border-top: 1px solid var(--border);
-        z-index: 20;
-      }
-      .mob-tab {
-        flex: 1;
-        background: transparent;
-        border: none;
-        color: var(--text3);
-        font-family: var(--mono);
-        font-size: 0.72rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        padding: 12px 0 10px;
-        cursor: pointer;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 3px;
-        transition: color 0.15s, background 0.15s;
-      }
-      .mob-tab .tab-icon { font-size: 1.1rem; }
-      .mob-tab.mob-tab-active {
-        color: var(--accent);
-        background: var(--bg3);
-        border-top: 2px solid var(--accent);
-      }
-      .mob-tab:active { background: var(--bg); }
     }
 
     /* Desktop fallback: keep sidebar at 240px on smaller desktops */
@@ -896,7 +903,14 @@
   <!-- DASHBOARD -->
   <div id="dashboard">
     <div class="super-header">
-      <div class="app-mark" style="font-size:1.1rem">FIELD<span>TRACK</span></div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="app-mark" style="font-size:1.1rem">FIELD<span>TRACK</span></div>
+        <!-- MAP / LIST toggle — always visible, works in all browsers -->
+        <div class="mob-tab-bar" id="mob-tab-bar">
+          <button class="mob-tab mob-tab-active" id="tab-map" onclick="switchMobTab('map')">🗺️ MAP</button>
+          <button class="mob-tab" id="tab-list" onclick="switchMobTab('list')">👥 LIST</button>
+        </div>
+      </div>
       <div class="super-header-right">
         <div class="legend">
           <div class="legend-item"><div class="legend-dot bg-blue"></div>En Route</div>
@@ -949,15 +963,6 @@
       <div id="map"></div>
     </div>
 
-    <!-- Mobile Tab Bar (supervisor mode only, visible on mobile) -->
-    <div class="mob-tab-bar" id="mob-tab-bar">
-      <button class="mob-tab mob-tab-active" id="tab-map" onclick="switchMobTab('map')">
-        <span class="tab-icon">🗺️</span>MAP
-      </button>
-      <button class="mob-tab" id="tab-list" onclick="switchMobTab('list')">
-        <span class="tab-icon">👥</span>LIST
-      </button>
-    </div>
   </div>
 
 </div><!-- end super-app -->
@@ -1312,9 +1317,14 @@ function debugLog(msg) {
   }
 }
 
-/* ═══════════════════════════════════════════════
-   MOBILE TAB SWITCHER (Supervisor mode)
-═══════════════════════════════════════════════ */
+function deleteTech(evt, id, name) {
+  evt.stopPropagation(); // don't trigger the row flyTo
+  if (!confirm(`Remove "${name}" from the dashboard?\nThis deletes their Firebase record permanently.`)) return;
+  db.ref('techs/' + id).remove()
+    .then(() => console.log('Deleted:', id))
+    .catch(e => alert('Delete failed: ' + e.message));
+}
+
 function switchMobTab(which) {
   const sidebar  = document.getElementById('sidebar');
   const map      = document.getElementById('map');
@@ -1520,7 +1530,8 @@ function applyFilters() {
         </div>
         <div class="row-status ${statusCls}">${status}</div>
         <div class="row-time">${timeAgo(tech.lastSeen)}</div>
-      </div>`;
+      </div>
+      <button class="del-tech-btn" title="Remove this tech" onclick="deleteTech(event,'${id}','${(tech.name||id).replace(/'/g,"\\'")}')">🗑</button>`;
 
     row.addEventListener('click', () => {
       if (tech.lat && tech.lng) {

@@ -650,8 +650,36 @@
 
     /* Responsive */
     @media (max-width: 700px) {
-      #sidebar { width: 240px; min-width: 240px; }
       .legend { display: none; }
+      .count-badge { padding: 4px 8px; font-size: 0.7rem; }
+      
+      .dashboard-body {
+        flex-direction: column;
+      }
+      #map {
+        flex: 1; /* Takes half space */
+        min-height: 40vh;
+      }
+      #sidebar {
+        width: 100%;
+        min-width: 100%;
+        height: 50vh; /* Takes bottom half */
+        border-right: none;
+        border-top: 1px solid var(--border);
+      }
+      .filter-bar {
+        flex-direction: row;
+        overflow-x: auto;
+        padding: 8px;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+      .filter-bar select {
+        padding: 6px 28px 6px 8px;
+        font-size: 0.75rem;
+        flex: 1;
+        min-width: 110px;
+      }
     }
   </style>
 </head>
